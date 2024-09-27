@@ -2,11 +2,9 @@ import { Editor, MarkdownView, Menu, Notice, Plugin } from 'obsidian';
 
 import { getIframe } from './utils/iframe_generator.utils';
 import { ConfigureIframeModal } from './configure_iframe_modal';
-import { isUrl } from './utils/url.utils';
 
 export default class FormatNotionPlugin extends Plugin {
 	async onload() {
-		console.log('Loading obsidian-convert-url-to-iframe');
 		this.addCommand({
 			id: "url-to-iframe",
 			name: "URL to Preview/Iframe",
@@ -19,54 +17,76 @@ export default class FormatNotionPlugin extends Plugin {
 			],
 		});
 
-		// Editor mode (right click on text)
 		this.registerEvent(this.app.workspace.on('editor-menu',
 			(menu: Menu, _: Editor, view: MarkdownView) => {
-				const url = this.getCleanedUrl();
-				if (url) {
+				const urlInfo = this.getYoutubeUrl();
+				if (urlInfo) {
 					menu.addItem((item) => { 
 						item.setTitle("Url to Preview/Iframe")
 							.setIcon("create-new")
 							.onClick((_) => {
-								this.urlToIframe(url);
+								this.urlToIframe(urlInfo);
 							});
 					});
 				}
 			}));
 	}
 
-	async urlToIframe(inputUrl?: string): Promise<void> {
+	async urlToIframe(inputUrlInfo?: {url: string, start: EditorPosition, end: EditorPosition}): Promise<void> {
 		const activeLeaf: any = this.app.workspace.activeLeaf;
 		const editor = activeLeaf.view.sourceMode.cmEditor;
 
-		const url = inputUrl || this.getCleanedUrl();
+		const urlInfo = inputUrlInfo || this.getYoutubeUrl();
 
-		if (url) {
-			const iframeHtml = await getIframe(url);
+		if (urlInfo) {
+			editor.setSelection(urlInfo.start, urlInfo.end);
+			const iframeHtml = await getIframe(urlInfo.url);
 			const modal = new ConfigureIframeModal(this.app, iframeHtml, editor);
+			modal.onClose = () => {
+				if (modal.iframeHtml) {
+					// Ensure we're still selecting the correct range
+					const currentContent = editor.getRange(urlInfo.start, urlInfo.end);
+					if (currentContent === urlInfo.url) {
+						// Replace the URL with the iframe HTML
+						editor.replaceRange(modal.iframeHtml, urlInfo.start, urlInfo.end);
+						new Notice('YouTube URL replaced with iframe.');
+					} else {
+						new Notice('URL content changed, unable to replace.');
+					}
+				}
+			};
 			modal.open();
 		} else {
-			new Notice('No valid URL found at cursor position or in selection.');
+			new Notice('No valid YouTube URL found at cursor position or in selection.');
 		}
 	}
 
-	private getCleanedUrl(): string {
+	private getYoutubeUrl(): {url: string, start: EditorPosition, end: EditorPosition} | null {
 		const activeLeaf: any = this.app.workspace.activeLeaf;
 		const editor = activeLeaf.view.sourceMode.cmEditor;
+		const cursor = editor.getCursor();
+		const line = editor.getLine(cursor.line);
 		
-		if (editor.somethingSelected()) {
-			const selectedText: string = editor.getSelection().trim();
-			return isUrl(selectedText) ? selectedText : null;
-		} else {
-			const cursor = editor.getCursor();
-			const line = editor.getLine(cursor.line);
-			const words = line.split(/\s+/);
-			for (const word of words) {
-				if (isUrl(word) && line.indexOf(word) <= cursor.ch && line.indexOf(word) + word.length >= cursor.ch) {
-					return word;
-				}
+		const youtubeRegex = /https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)(?:&\S*)?/;
+		const match = line.match(youtubeRegex);
+
+		if (match) {
+			const start = { line: cursor.line, ch: match.index };
+			const end = { line: cursor.line, ch: match.index + match[0].length };
+			
+			if (cursor.ch >= start.ch - 1 && cursor.ch <= end.ch + 1) {
+				return {
+					url: match[0],
+					start: start,
+					end: end
+				};
 			}
 		}
 		return null;
 	}
+}
+
+interface EditorPosition {
+	line: number;
+	ch: number;
 }
