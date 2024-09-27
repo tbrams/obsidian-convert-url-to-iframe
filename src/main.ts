@@ -18,25 +18,25 @@ export default class FormatNotionPlugin extends Plugin {
 		});
 
 		this.registerEvent(this.app.workspace.on('editor-menu',
-			(menu: Menu, _: Editor, view: MarkdownView) => {
-				const urlInfo = this.getYoutubeUrl();
+			(menu: Menu, editor: Editor, view: MarkdownView) => {
+				const urlInfo = this.getYoutubeUrl(editor);
 				if (urlInfo) {
 					menu.addItem((item) => { 
 						item.setTitle("Url to Preview/Iframe")
 							.setIcon("create-new")
 							.onClick((_) => {
-								this.urlToIframe(urlInfo);
+								this.urlToIframe(urlInfo, editor);
 							});
 					});
 				}
 			}));
 	}
 
-	async urlToIframe(inputUrlInfo?: {url: string, start: EditorPosition, end: EditorPosition}): Promise<void> {
-		const activeLeaf: any = this.app.workspace.activeLeaf;
-		const editor = activeLeaf.view.sourceMode.cmEditor;
+	async urlToIframe(inputUrlInfo?: {url: string, start: EditorPosition, end: EditorPosition}, inputEditor?: Editor): Promise<void> {
+		const activeLeaf = this.app.workspace.activeLeaf;
+		const editor = inputEditor || (activeLeaf.view as MarkdownView).editor;
 
-		const urlInfo = inputUrlInfo || this.getYoutubeUrl();
+		const urlInfo = inputUrlInfo || this.getYoutubeUrl(editor);
 
 		if (urlInfo) {
 			editor.setSelection(urlInfo.start, urlInfo.end);
@@ -61,9 +61,7 @@ export default class FormatNotionPlugin extends Plugin {
 		}
 	}
 
-	private getYoutubeUrl(): {url: string, start: EditorPosition, end: EditorPosition} | null {
-		const activeLeaf: any = this.app.workspace.activeLeaf;
-		const editor = activeLeaf.view.sourceMode.cmEditor;
+	private getYoutubeUrl(editor: Editor): {url: string, start: EditorPosition, end: EditorPosition} | null {
 		const cursor = editor.getCursor();
 		const line = editor.getLine(cursor.line);
 		
